@@ -1,9 +1,9 @@
 import React from 'react';
 import './Card.css'
 
-const Card = ({children, className}) => {
+const Card = ({children, className, style}) => {
     return (
-        <div className={`card ${className}`}>
+        <div className={`card ${className}`} style={style} >
             {children}
         </div>
     );
