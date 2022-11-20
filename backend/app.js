@@ -3,7 +3,9 @@ import bodyParser from "body-parser";
 import {placesRouter} from "./routes/places-routes.js";
 import {usersRouter} from "./routes/users-routes.js";
 import {HttpError} from "./models/http-error.js";
+import dotenv from 'dotenv'
 
+dotenv.config()
 
 const app = express()
 
@@ -27,6 +29,6 @@ app.use((err, req, res, next)=> {
 
 
 
-app.listen(8000, ()=> {
+app.listen(4000, ()=> {
     console.log('server started')
 })
