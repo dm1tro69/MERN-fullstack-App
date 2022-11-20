@@ -4,6 +4,7 @@ import {placesRouter} from "./routes/places-routes.js";
 import {usersRouter} from "./routes/users-routes.js";
 import {HttpError} from "./models/http-error.js";
 import dotenv from 'dotenv'
+import mongoose from "mongoose";
 
 dotenv.config()
 
@@ -27,8 +28,18 @@ app.use((err, req, res, next)=> {
     res.json({message: err.message || 'An unknown error'})
 })
 
+const start = async () => {
+    try {
+        await mongoose.connect(process.env.DB_KEY, ()=> {
+            console.log('connected db')
+            app.listen(4000, ()=> {
+                console.log('server started')
+            })
+        })
+    }catch (e) {
+        console.log(e)
+    }
+}
+start()
 
 
-app.listen(4000, ()=> {
-    console.log('server started')
-})
