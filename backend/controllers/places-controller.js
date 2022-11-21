@@ -1,40 +1,35 @@
 import {HttpError} from "../models/http-error.js";
-import { v4 as uuidv4 } from 'uuid';
 import {validationResult} from 'express-validator'
 import {getCoordsForAddress} from "../utils/location.js";
+import PlaceModel from "../models/place-model.js";
+import UserModel from "../models/user-model.js";
+import {startSession} from "mongoose";
 
-let DUMMY_PLACES = [
-    {
-        id: 'p1',
-        title: 'Empire State Building',
-        description: 'One of the most famous sky scrappers in the world',
-        location: {
-            lat: 40.7484474,
-            lng: -73.9871516
-        },
-        address: 'New York',
-        creator: 'u1'
-    }
-]
 
-export const getPlaceById = (req, res, )=> {
+export const getPlaceById = async (req, res, next)=> {
     const placeId = req.params.pid
-    const place = DUMMY_PLACES.find(pl => pl.id === placeId)
-    if (!place){
-        throw new HttpError('Could not find a place for the provided id', 404)
+    try {
+        const place = await PlaceModel.findById(placeId)
+        res.json({place})
+
+    }catch (e) {
+       const error = new HttpError('Could not find a place for the provided id', 500)
+        return next(error)
     }
-    res.json({place})
 
 }
 
-export const getPlaceByUserId = (req, res, next)=> {
-    const userId = req.params.uid
-    const places = DUMMY_PLACES.filter(pl => pl.creator === userId)
-    if (!places || places.length ===0){
-        return next(new HttpError('Could not find a places for the provided user id', 404))
-    }else {
+export const getPlaceByUserId = async (req, res, next)=> {
+    try {
+        const userId = req.params.uid
+        const places = await PlaceModel.find({creator: userId})
+
         res.json({places})
+    }catch (e) {
+        const error = new HttpError('Could not find a place for the provided id', 500)
+        return next(error)
     }
+
 }
 export const createPlace = async (req, res, next) => {
    const errors = validationResult(req)
@@ -48,35 +43,96 @@ export const createPlace = async (req, res, next) => {
     }catch (e) {
          return next(e)
     }
-    const createdPlace = {
-        id: uuidv4(),
+    const createdPlace = new PlaceModel({
         title,
         description,
-        location: coordinates,
         address,
+        location: coordinates,
+        image: 'https://images.pexels.com/photos/2404843/pexels-photo-2404843.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1',
         creator
+    })
+
+    let user
+    try {
+        user = await UserModel.findById(creator)
+    }catch (e) {
+        const error = new HttpError('Creating place failed', 500)
+        return next(error)
     }
-    DUMMY_PLACES.push(createdPlace)
+    if (!user){
+        const error = new HttpError('Invalid data', 500)
+        return next(error)
+    }
+
+    try {
+        const sess = await startSession()
+        sess.startTransaction()
+        await createdPlace.save({session: sess})
+        user.places.push(createdPlace)
+        await user.save({session: sess})
+        await sess.commitTransaction()
+    }catch (e) {
+        const error = new HttpError('Creating failed', 500)
+        return next(error)
+    }
+
     res.status(201).json({place: createdPlace})
 }
-export const updatePlace = (req, res) => {
+export const updatePlace = async (req, res, next) => {
     const errors = validationResult(req)
     if (!errors.isEmpty()){
         console.log(errors)
-        new HttpError('Invalid data', 422)
+       return next(new HttpError('Invalid data', 422))
     }
     const {title, description} = req.body
     const placeId = req.params.pid
-    const updatedPlace = {...DUMMY_PLACES.find(pl => pl.id === placeId)}
-    const placeIndex = DUMMY_PLACES.findIndex(pl => pl.id === placeId)
-    updatedPlace.title = title
-    updatedPlace.description = description
-    DUMMY_PLACES[placeIndex] = updatedPlace
-    res.status(200).json({place: updatedPlace})
+    try {
+        const updatedPlace = await PlaceModel.findById(placeId)
+        updatedPlace.title = title
+        updatedPlace.description = description
+        await updatedPlace.save()
+
+        res.status(200).json({place: updatedPlace})
+    }catch (e) {
+        const error = new HttpError('Invalid data', 500)
+        return next(error)
+    }
 
 }
-export const deletePlace = (req, res) => {
-    const placeId = req.params.pid
-    DUMMY_PLACES = DUMMY_PLACES.filter(pl => pl.id !== placeId)
-    res.status(200).json({message: 'Deleted'})
+export const deletePlace = async (req, res, next) => {
+    const placeId = req.params.pid;
+
+    let place;
+    try {
+        place = await PlaceModel.findById(placeId).populate('creator');
+    } catch (err) {
+        const error = new HttpError(
+            'Something went wrong, could not delete place.',
+            500
+        );
+        return next(error);
+    }
+
+    if (!place) {
+        const error = new HttpError('Could not find place for this id.', 404);
+        return next(error);
+    }
+
+    try {
+        const sess = await startSession();
+        sess.startTransaction();
+        await place.remove({ session: sess });
+        place.creator.places.pull(place);
+        await place.creator.save({ session: sess });
+        await sess.commitTransaction();
+    } catch (err) {
+        const error = new HttpError(
+            'Something went wrong, could not delete place.',
+            500
+        );
+        return next(error);
+    }
+
+    res.status(200).json({ message: 'Deleted place.' });
+
 }
